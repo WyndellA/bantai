@@ -1,4 +1,9 @@
 import os
+import random
+import shutil
+
+# Lagay lang ito para same ouput each run
+random.seed(67)
 
 def check_glasses(folder_path, state_label):
     glasses_count = 0
@@ -47,8 +52,52 @@ def run_glasses_analysis(base_path):
     }
 
 
-# Optional: run directly
-if __name__ == "__main__":
-    base_path = "data/train"
+def split_data(source_dir, train_dir, test_dir, test_ratio=0.15):
+    # Create folders if they don't exist
+    os.makedirs(train_dir, exist_ok=True)
+    os.makedirs(test_dir, exist_ok=True)
 
+    files = os.listdir(source_dir)
+    random.shuffle(files)
+
+    split_index = int(len(files) * test_ratio)
+
+    test_files = files[:split_index]
+    train_files = files[split_index:]
+
+    # Copy files
+    for file in train_files:
+        shutil.copy(
+            os.path.join(source_dir, file),
+            os.path.join(train_dir, file)
+        )
+
+    for file in test_files:
+        shutil.copy(
+            os.path.join(source_dir, file),
+            os.path.join(test_dir, file)
+        )
+
+    print(f"{source_dir}")
+    print(f"Train: {len(train_files)} | Test: {len(test_files)}\n")
+
+
+
+if __name__ == "__main__":
+    base_path = "data/raw"
+
+    # Step 1: Analyze dataset
     run_glasses_analysis(base_path)
+
+    # Step 2: Split dataset
+    split_data(
+        os.path.join(base_path, "Open_Eyes"),
+        "data/train/Open_Eyes",
+        "data/test/Open_Eyes"
+    )
+
+    split_data(
+        os.path.join(base_path, "Closed_Eyes"),
+        "data/train/Closed_Eyes",
+        "data/test/Closed_Eyes"
+    )
