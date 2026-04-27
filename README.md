@@ -12,15 +12,3 @@ BANTAI (Behavioral Attention and Non-sleep Tracking with AI) is a computer visio
 
 - Three alertness states: Awake, Drowsy, Sleeping 
 
-
-## Tech Stack
-
-- Python  
-
-- TensorFlow (MobileNetV2)  
-
-- OpenCV  
-
-- MediaPipe  
-
-- Streamlit  
