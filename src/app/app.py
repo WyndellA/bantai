@@ -21,7 +21,11 @@ stop = st.sidebar.button("Stop")
 threshold = st.sidebar.slider("Closed Threshold", 0.1, 0.6, 0.25)
 
 # Load model
-model = tf.keras.models.load_model("models/model.h5")
+@st.cache_resource
+def load_model():
+    return tf.keras.models.load_model("models/model.h5", compile=False)
+
+model = load_model()
 IMG_SIZE = (224, 224)
 
 face_cascade = cv2.CascadeClassifier(
