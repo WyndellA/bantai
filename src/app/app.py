@@ -1,9 +1,11 @@
 import streamlit as st
-import cv2
 import numpy as np
 import tensorflow as tf
+import pandas as pd
+import cv2
 import time
 import os
+from datetime import datetime
 
 
 st.set_page_config(page_title="BANTAI", layout="wide")
@@ -39,6 +41,26 @@ confidence_box = col2.empty()
 closed_start = None
 cap = cv2.VideoCapture(0)
 
+STATE = st.session_state
+
+# Key features of session summary
+if 'duration' not in STATE: STATE.duration = None                           # Session duration
+if 'drowsy_episodes' not in STATE: STATE.drowsy_episodes = 0                # Number of 'drowsy' episodes
+if 'sleep_episodes' not in STATE: STATE.sleep_episodes = 0                  # Number of 'sleeping' episodes
+if 'drowsy_flag' not in STATE: STATE.drowsy_flag = False                    # Prevents duplicated 'drowsy' episodes
+if 'sleep_flag' not in STATE: STATE.sleep_flag = False                      # Prevents duplicated 'sleeping' episodes
+if 'alertness_timeline' not in STATE: STATE.alertness_timeline = []         # List of episodes
+if 'start_time' not in STATE: STATE.start_time = None                       # Local start time
+
+# Start new session on new running instance
+if run:
+    STATE.duration = time.time()
+    STATE.drowsy_episodes = 0
+    STATE.sleep_episodes = 0
+    STATE.drowsy_flag = False
+    STATE.sleep_flag = False
+    STATE.alertness_timeline = []
+    STATE.start_time = datetime.now().strftime("%I:%M %p")
 
 while run and not stop:
     ret, frame = cap.read()
@@ -110,4 +132,52 @@ while run and not stop:
 
     confidence_box.metric("Model Confidence", f"{confidence:.2f}")
 
+    if STATE.duration is not None:
+        # Get second when frame was processed
+        curr = time.time() - STATE.duration
+        # Scale categories numerically from 0 to 1
+        if "No Face" in label: val = np.nan
+        else: val = 0.0 if "Sleeping" in label else (0.5 if "Drowsy" in label else 1.0)
+
+        # New sleep episode
+        if val == 0.0 and not STATE.sleep_flag:
+            STATE.sleep_episodes += 1
+            STATE.sleep_flag = True
+
+        # New drowsy episode
+        if val == 0.5 and not STATE.drowsy_flag:
+            STATE.drowsy_episodes += 1
+            STATE.drowsy_flag = True
+
+        if val != 0.0: STATE.sleep_flag = False
+        if val != 0.5: STATE.drowsy_flag = False
+
+        # Set time as the x-value and alertness level as the y-value
+        STATE.alertness_timeline.append({"Time (seconds)": curr, "Alertness Level": val})
+
 cap.release()
+
+# Session summary upon 'Stop'
+if stop and STATE.duration is not None:
+    st.markdown("---")
+    st.header("Session Summary")
+    
+    # Calculate total time (in minutes and seconds)
+    mins, secs = divmod(int(time.time() - STATE.duration), 60)
+    
+    # Set up data columns
+    a, b, c, d = st.columns(4)
+    a.metric("Start Time", STATE.start_time)
+    b.metric("Total Session Duration", f'{mins}m {secs}s')
+    c.metric("Drowsy Episodes Detected", STATE.drowsy_episodes)
+    d.metric("Sleep Episodes Detected", STATE.sleep_episodes)
+    
+    # Alertness timeline
+    if len(STATE.alertness_timeline) > 0:
+        st.subheader("Alertness Timeline")
+        st.markdown("<div style='text-align: right; color: gray; font-size: 1rem;'>"
+                    "0.0: Sleeping | 0.5: Drowsy | 1.0: Awake</div>", 
+                    unsafe_allow_html=True)
+        df = pd.DataFrame(STATE.alertness_timeline)
+        df.set_index("Time (seconds)", inplace=True)
+        st.area_chart(df, x_label="Time (seconds)", y_label="Alertness Level")
