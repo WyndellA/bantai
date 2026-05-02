@@ -184,3 +184,21 @@ if stop and STATE.duration is not None:
         df = pd.DataFrame(STATE.alertness_timeline)
         df.set_index("Time (seconds)", inplace=True)
         st.area_chart(df, x_label="Time (seconds)", y_label="Alertness Level")
+
+        # Personalized recommendations
+        negative_episodes = df[df["Alertness Level"] < 1.0]     # Isolate drowsy/sleeping episodes
+        # Scenario 1: Fully awake
+        if STATE.sleep_episodes + STATE.drowsy_episodes == 0: st.success(f"#### 💡 Personal Recommendations\n You managed to stay fully awake throughout the session! Continue your study habits, and don't forget to get some rest after a job well done.")
+        elif not negative_episodes.empty:
+            # Get first instance of drowsy/sleeping
+            episode_incidence_min, episode_incidence_sec = divmod(int(negative_episodes.index[0]), 60)
+
+            # String helper
+            if episode_incidence_min > 0 and episode_incidence_sec > 0: focus_time = f"{episode_incidence_min} minutes and {episode_incidence_sec} seconds"
+            elif episode_incidence_min > 0: focus_time = f"{episode_incidence_min} minutes"
+            else: focus_time = f"{episode_incidence_sec} seconds"
+
+            # Scenario 2: Immediate fatigue
+            if episode_incidence_min < 10: st.warning(f"#### 💡 Personal Recommendations\n You immediately experienced fatigue just {focus_time} into the session. Consider resting before studying again.")
+            # Scenario 3: Fatigue pattern recognition
+            else: st.info(f"#### 💡 Personal Recommendations\n You consistently stayed focused for {focus_time} before feeling drowsy. Consider taking a break every {max(10, episode_incidence_min - 10)} minutes for optimal performance.")
