@@ -101,9 +101,12 @@ while run and not stop:
                 label = "Sleeping"
                 color = (0, 0, 255)
                 os.system("afplay sound/fahhhhh.mp3 &")
-            else:
+            elif elapsed > 1:
                 label = "Drowsy"
                 color = (0, 255, 255)
+            else:
+                label = "Awake"
+                color = (0, 255, 0)
         else:
             closed_start = None
             label = "Awake"
