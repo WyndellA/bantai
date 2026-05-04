@@ -118,11 +118,11 @@ if STATE.camera_running and STATE.duration is None:
     STATE.sleep_episodes = 0
     STATE.alertness_timeline = []
     STATE.start_time = datetime.now().strftime("%I:%M %p")
-    STATE.feedback_submitted = False
     STATE.last_drowsy_time = 0
     STATE.last_sleep_time = 0
     STATE.last_alarm_time = 0
     STATE.closed_start = None
+    STATE.feedback_submitted = False
     
 while STATE.camera_running:
     ret, frame = cap.read()
@@ -249,9 +249,11 @@ if STATE.session_stopped and STATE.duration is not None:
 
         # Personalized recommendations
         negative_episodes = df[df["Alertness Level"] < 1.0]     # Isolate drowsy/sleeping episodes
-        # Scenario 1: Fully awake
+
+        # Scenario 1: Short session
         if STATE.session_length < 30:
             st.info("Session too short for meaningful behavioral recommendations.")
+        # Scenario 2: Fully awake
         elif STATE.sleep_episodes + STATE.drowsy_episodes == 0:
             st.success(f"#### 💡 Personal Recommendations\n You managed to stay fully awake throughout the session! Continue your study habits, and don't forget to get some rest after a job well done.")
         elif not negative_episodes.empty:
@@ -273,7 +275,7 @@ if STATE.session_stopped and STATE.duration is not None:
                 second_label = "second" if episode_incidence_sec == 1 else "seconds"
                 focus_time = f"{episode_incidence_sec} {second_label}"
 
-            # Scenario 2: Immediate fatigue
+            # Scenario 3: Immediate fatigue
             if episode_incidence_min < 15:
                 if episode_incidence_min == 0 and episode_incidence_sec < 10:
                     st.warning(
@@ -289,9 +291,8 @@ if STATE.session_stopped and STATE.duration is not None:
                         f"Consider taking short breaks and ensuring you are well-rested before long study sessions."
                     )
 
-            # Scenario 3: Fatigue pattern recognition
+            # Scenario 4: Fatigue pattern recognition
             else:
-                # st.info(f"#### 💡 Personal Recommendations\n You consistently stayed focused for {focus_time} before feeling drowsy. Consider taking a break every {max(10, episode_incidence_min - 10)} minutes for optimal performance.")
                 recommended_break = max(25, int(episode_incidence_min * 0.75))
                 st.info(
                     f"#### 💡 Personal Recommendations\n"
