@@ -113,6 +113,7 @@ if 'session_stopped' not in STATE:
 # Start new session on new running instance
 if STATE.camera_running and STATE.duration is None:
     STATE.duration = time.time()
+    STATE.session_length = 0
     STATE.drowsy_episodes = 0
     STATE.sleep_episodes = 0
     STATE.alertness_timeline = []
