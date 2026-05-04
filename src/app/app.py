@@ -54,6 +54,10 @@ if st.sidebar.button("Stop"):
     STATE.camera_running = False
     STATE.session_stopped = True
 
+    # Freeze final session length
+    if STATE.duration is not None:
+        STATE.session_length = time.time() - STATE.duration
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("Detection Preferences")
 threshold = st.sidebar.slider("Eye Closed Threshold", 0.1, 0.6, 0.25)
@@ -80,7 +84,9 @@ cap = cv2.VideoCapture(0)
 
 # Key features of session summary
 if 'duration' not in STATE:
-    STATE.duration = None                 # Session duration
+    STATE.duration = None                 # Session start time
+if 'session_length' not in STATE:
+    STATE.session_length = 0              # Session total time
 if 'drowsy_episodes' not in STATE:
     STATE.drowsy_episodes = 0             # Number of 'drowsy' episodes
 if 'sleep_episodes' not in STATE:
@@ -221,7 +227,7 @@ if STATE.session_stopped and STATE.duration is not None:
     st.header("Session Summary")
     
     # Calculate total time (in minutes and seconds)
-    mins, secs = divmod(int(time.time() - STATE.duration), 60)
+    mins, secs = divmod(int(STATE.session_length), 60)
     
     # Set up data columns
     a, b, c, d = st.columns(4)
@@ -242,9 +248,8 @@ if STATE.session_stopped and STATE.duration is not None:
 
         # Personalized recommendations
         negative_episodes = df[df["Alertness Level"] < 1.0]     # Isolate drowsy/sleeping episodes
-        session_length = time.time() - STATE.duration
         # Scenario 1: Fully awake
-        if session_length < 30:
+        if STATE.session_length < 30:
             st.info("Session too short for meaningful behavioral recommendations.")
         elif STATE.sleep_episodes + STATE.drowsy_episodes == 0:
             st.success(f"#### 💡 Personal Recommendations\n You managed to stay fully awake throughout the session! Continue your study habits, and don't forget to get some rest after a job well done.")
@@ -310,10 +315,9 @@ if STATE.session_stopped and STATE.duration is not None:
         )
 
         if not STATE.feedback_submitted and st.button("Submit Feedback"):
-            total_duration = time.time() - STATE.duration
             save_feedback(
                 STATE.start_time,
-                total_duration,
+                STATE.session_length,
                 STATE.drowsy_episodes,
                 STATE.sleep_episodes,
                 feedback
