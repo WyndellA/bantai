@@ -7,18 +7,52 @@ import time
 import os
 from datetime import datetime
 
+def save_feedback(
+    start_time,
+    duration,
+    drowsy_episodes,
+    sleep_episodes,
+    feedback_rating
+):
+    os.makedirs("logs", exist_ok=True)
+    file_path = "logs/feedback.csv"
+
+    data = {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "start_time": start_time,
+        "duration_minutes": round(duration / 60, 2),
+        "drowsy_episodes": drowsy_episodes,
+        "sleep_episodes": sleep_episodes,
+        "feedback_rating": feedback_rating
+    }
+
+    df_new = pd.DataFrame([data])
+    if os.path.exists(file_path):
+        df_old = pd.read_csv(file_path)
+        df_all = pd.concat([df_old, df_new], ignore_index=True)
+    else:
+        df_all = df_new
+
+    df_all.to_csv(file_path, index=False)
 
 st.set_page_config(page_title="BANTAI", layout="wide")
-
 st.title("BANTAI - Drowsiness Detection")
 st.markdown("Real-time eye monitoring system using Deep Learning")
-
+STATE = st.session_state
 col1, col2 = st.columns([2, 1])
 
 # Sidebar controls
 st.sidebar.title("Controls")
-run = st.sidebar.button("Start Camera")
-stop = st.sidebar.button("Stop")
+if st.sidebar.button("Start Camera"):
+    STATE.camera_running = True
+    STATE.session_stopped = False
+
+    # Reset session state
+    STATE.duration = None
+
+if st.sidebar.button("Stop"):
+    STATE.camera_running = False
+    STATE.session_stopped = True
 
 threshold = st.sidebar.slider("Closed Threshold", 0.1, 0.6, 0.25)
 
@@ -29,6 +63,9 @@ def load_model():
 
 model = load_model()
 IMG_SIZE = (224, 224)
+DROWSY_COOLDOWN = 5
+SLEEP_COOLDOWN = 8
+WINDOW_SIZE = 10
 
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
@@ -41,28 +78,46 @@ confidence_box = col2.empty()
 closed_start = None
 cap = cv2.VideoCapture(0)
 
-STATE = st.session_state
-
 # Key features of session summary
-if 'duration' not in STATE: STATE.duration = None                           # Session duration
-if 'drowsy_episodes' not in STATE: STATE.drowsy_episodes = 0                # Number of 'drowsy' episodes
-if 'sleep_episodes' not in STATE: STATE.sleep_episodes = 0                  # Number of 'sleeping' episodes
-if 'drowsy_flag' not in STATE: STATE.drowsy_flag = False                    # Prevents duplicated 'drowsy' episodes
-if 'sleep_flag' not in STATE: STATE.sleep_flag = False                      # Prevents duplicated 'sleeping' episodes
-if 'alertness_timeline' not in STATE: STATE.alertness_timeline = []         # List of episodes
-if 'start_time' not in STATE: STATE.start_time = None                       # Local start time
+if 'duration' not in STATE:
+    STATE.duration = None                 # Session duration
+if 'drowsy_episodes' not in STATE:
+    STATE.drowsy_episodes = 0             # Number of 'drowsy' episodes
+if 'sleep_episodes' not in STATE:
+    STATE.sleep_episodes = 0              # Number of 'sleeping' episodes
+if 'alertness_timeline' not in STATE:
+    STATE.alertness_timeline = []         # List of episodes
+if 'start_time' not in STATE:
+    STATE.start_time = None               # Local start time
+if 'last_drowsy_time' not in STATE:
+    STATE.last_drowsy_time = 0
+if 'last_sleep_time' not in STATE:
+    STATE.last_sleep_time = 0
+if 'last_alarm_time' not in STATE:
+    STATE.last_alarm_time = 0
+if 'camera_running' not in STATE:
+    STATE.camera_running = False
+if 'session_stopped' not in STATE:
+    if 'feedback_submitted' not in STATE:
+        STATE.feedback_submitted = False
+    STATE.session_stopped = False
+if 'pred_history' not in STATE:
+    STATE.pred_history = []
 
 # Start new session on new running instance
-if run:
+if STATE.camera_running and STATE.duration is None:
     STATE.duration = time.time()
     STATE.drowsy_episodes = 0
     STATE.sleep_episodes = 0
-    STATE.drowsy_flag = False
-    STATE.sleep_flag = False
     STATE.alertness_timeline = []
     STATE.start_time = datetime.now().strftime("%I:%M %p")
-
-while run and not stop:
+    STATE.feedback_submitted = False
+    STATE.last_drowsy_time = 0
+    STATE.last_sleep_time = 0
+    STATE.last_alarm_time = 0
+    STATE.pred_history = []
+    
+while STATE.camera_running:
     ret, frame = cap.read()
     if not ret:
         st.error("Failed to access camera")
@@ -89,18 +144,23 @@ while run and not stop:
         img = np.expand_dims(img, axis=0)
 
         prediction = model.predict(img, verbose=0)[0][0]
-        confidence = float(prediction)
+        STATE.pred_history.append(prediction)
+        if len(STATE.pred_history) > WINDOW_SIZE:
+            STATE.pred_history.pop(0)
+        smoothed_pred = sum(STATE.pred_history) / len(STATE.pred_history)
+        confidence = float(smoothed_pred)
 
-        if prediction < threshold:
+        if smoothed_pred < threshold:
             if closed_start is None:
                 closed_start = time.time()
-
             elapsed = time.time() - closed_start
 
             if elapsed > 2:
                 label = "Sleeping"
                 color = (0, 0, 255)
-                os.system("afplay sound/fahhhhh.mp3 &")
+                if time.time() - STATE.last_alarm_time > 3:
+                    os.system("afplay sound/fah_edited.mp3 &")
+                    STATE.last_alarm_time = time.time()
             elif elapsed > 1:
                 label = "Drowsy"
                 color = (0, 255, 255)
@@ -111,7 +171,6 @@ while run and not stop:
             closed_start = None
             label = "Awake"
             color = (0, 255, 0)
-
         break
 
     # Draw label
@@ -122,7 +181,6 @@ while run and not stop:
     # Convert frame
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     FRAME_WINDOW.image(frame)
-
 
     if "Awake" in label:
         status_box.success(label)
@@ -142,18 +200,19 @@ while run and not stop:
         if "No Face" in label: val = np.nan
         else: val = 0.0 if "Sleeping" in label else (0.5 if "Drowsy" in label else 1.0)
 
+        current_time = time.time()
+
         # New sleep episode
-        if val == 0.0 and not STATE.sleep_flag:
-            STATE.sleep_episodes += 1
-            STATE.sleep_flag = True
+        if val == 0.0:
+            if current_time - STATE.last_sleep_time > SLEEP_COOLDOWN:
+                STATE.sleep_episodes += 1
+                STATE.last_sleep_time = current_time
 
         # New drowsy episode
-        if val == 0.5 and not STATE.drowsy_flag:
-            STATE.drowsy_episodes += 1
-            STATE.drowsy_flag = True
-
-        if val != 0.0: STATE.sleep_flag = False
-        if val != 0.5: STATE.drowsy_flag = False
+        elif val == 0.5:
+            if current_time - STATE.last_drowsy_time > DROWSY_COOLDOWN:
+                STATE.drowsy_episodes += 1
+                STATE.last_drowsy_time = current_time
 
         # Set time as the x-value and alertness level as the y-value
         STATE.alertness_timeline.append({"Time (seconds)": curr, "Alertness Level": val})
@@ -161,7 +220,7 @@ while run and not stop:
 cap.release()
 
 # Session summary upon 'Stop'
-if stop and STATE.duration is not None:
+if STATE.session_stopped and STATE.duration is not None:
     st.markdown("---")
     st.header("Session Summary")
     
@@ -169,11 +228,14 @@ if stop and STATE.duration is not None:
     mins, secs = divmod(int(time.time() - STATE.duration), 60)
     
     # Set up data columns
-    a, b, c, d = st.columns(4)
+    score = max(0, 100 - (STATE.drowsy_episodes * 10 +
+            STATE.sleep_episodes * 20))
+    a, b, c, d, e = st.columns(5)
     a.metric("Start Time", STATE.start_time)
     b.metric("Total Session Duration", f'{mins}m {secs}s')
     c.metric("Drowsy Episodes Detected", STATE.drowsy_episodes)
     d.metric("Sleep Episodes Detected", STATE.sleep_episodes)
+    e.metric("Alertness Score", f"{score}/100")
     
     # Alertness timeline
     if len(STATE.alertness_timeline) > 0:
@@ -187,18 +249,82 @@ if stop and STATE.duration is not None:
 
         # Personalized recommendations
         negative_episodes = df[df["Alertness Level"] < 1.0]     # Isolate drowsy/sleeping episodes
+        session_length = time.time() - STATE.duration
         # Scenario 1: Fully awake
-        if STATE.sleep_episodes + STATE.drowsy_episodes == 0: st.success(f"#### 💡 Personal Recommendations\n You managed to stay fully awake throughout the session! Continue your study habits, and don't forget to get some rest after a job well done.")
+        if session_length < 30:
+            st.info("Session too short for meaningful behavioral recommendations.")
+        elif STATE.sleep_episodes + STATE.drowsy_episodes == 0:
+            st.success(f"#### 💡 Personal Recommendations\n You managed to stay fully awake throughout the session! Continue your study habits, and don't forget to get some rest after a job well done.")
         elif not negative_episodes.empty:
             # Get first instance of drowsy/sleeping
             episode_incidence_min, episode_incidence_sec = divmod(int(negative_episodes.index[0]), 60)
 
             # String helper
-            if episode_incidence_min > 0 and episode_incidence_sec > 0: focus_time = f"{episode_incidence_min} minutes and {episode_incidence_sec} seconds"
-            elif episode_incidence_min > 0: focus_time = f"{episode_incidence_min} minutes"
-            else: focus_time = f"{episode_incidence_sec} seconds"
+            if episode_incidence_min > 0 and episode_incidence_sec > 0:
+                minute_label = "minute" if episode_incidence_min == 1 else "minutes"
+                second_label = "second" if episode_incidence_sec == 1 else "seconds"
+                focus_time = (
+                    f"{episode_incidence_min} {minute_label} "
+                    f"and {episode_incidence_sec} {second_label}"
+                )
+            elif episode_incidence_min > 0:
+                minute_label = "minute" if episode_incidence_min == 1 else "minutes"
+                focus_time = f"{episode_incidence_min} {minute_label}"
+            else:
+                second_label = "second" if episode_incidence_sec == 1 else "seconds"
+                focus_time = f"{episode_incidence_sec} {second_label}"
 
             # Scenario 2: Immediate fatigue
-            if episode_incidence_min < 10: st.warning(f"#### 💡 Personal Recommendations\n You immediately experienced fatigue just {focus_time} into the session. Consider resting before studying again.")
+            if episode_incidence_min < 15:
+                if episode_incidence_min == 0 and episode_incidence_sec < 10:
+                    st.warning(
+                        "#### 💡 Personal Recommendations\n"
+                        "Early signs of fatigue were detected shortly after the session began. "
+                        "This may indicate tiredness, eye strain, or temporary detection noise. "
+                        "Try adjusting your lighting, posture, or taking a short rest before studying again."
+                    )
+                else:
+                    st.warning(
+                        f"#### 💡 Personal Recommendations\n"
+                        f"You began experiencing fatigue after {focus_time} of studying. "
+                        f"Consider taking short breaks and ensuring you are well-rested before long study sessions."
+                    )
+
             # Scenario 3: Fatigue pattern recognition
-            else: st.info(f"#### 💡 Personal Recommendations\n You consistently stayed focused for {focus_time} before feeling drowsy. Consider taking a break every {max(10, episode_incidence_min - 10)} minutes for optimal performance.")
+            else:
+                # st.info(f"#### 💡 Personal Recommendations\n You consistently stayed focused for {focus_time} before feeling drowsy. Consider taking a break every {max(10, episode_incidence_min - 10)} minutes for optimal performance.")
+                recommended_break = max(25, int(episode_incidence_min * 0.75))
+                st.info(
+                    f"#### 💡 Personal Recommendations\n"
+                    f"You consistently stayed focused for {focus_time} before feeling drowsy. "
+                    f"Based on your alertness trend, taking a short break every "
+                    f"{recommended_break} minutes may help maintain focus and reduce fatigue."
+                )
+
+        st.markdown("---")
+        st.subheader("Session Feedback")
+        st.write("How accurate was BANTAI during this session?")
+
+        feedback = st.radio(
+            "Select a rating:",
+            [
+                "⭐ Very Accurate",
+                "🙂 Accurate",
+                "😐 Neutral",
+                "😕 Inaccurate",
+                "❌ Very Inaccurate"
+            ]
+        )
+
+        if not STATE.feedback_submitted and st.button("Submit Feedback"):
+            total_duration = time.time() - STATE.duration
+            save_feedback(
+                STATE.start_time,
+                total_duration,
+                STATE.drowsy_episodes,
+                STATE.sleep_episodes,
+                feedback
+            )
+            STATE.feedback_submitted = True
+            st.success("Feedback submitted successfully!")
+            st.balloons()
