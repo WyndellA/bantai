@@ -224,13 +224,11 @@ if STATE.session_stopped and STATE.duration is not None:
     mins, secs = divmod(int(time.time() - STATE.duration), 60)
     
     # Set up data columns
-    score = max(0, 100 - (STATE.drowsy_episodes * 5 + STATE.sleep_episodes * 10))
-    a, b, c, d, e = st.columns(5)
+    a, b, c, d = st.columns(4)
     a.metric("Start Time", STATE.start_time)
     b.metric("Total Session Duration", f'{mins}m {secs}s')
     c.metric("Drowsy Episodes Detected", STATE.drowsy_episodes)
     d.metric("Sleep Episodes Detected", STATE.sleep_episodes)
-    e.metric("Alertness Score", f"{score}/100")
     
     # Alertness timeline
     if len(STATE.alertness_timeline) > 0:
