@@ -65,7 +65,6 @@ model = load_model()
 IMG_SIZE = (224, 224)
 DROWSY_COOLDOWN = 5
 SLEEP_COOLDOWN = 8
-WINDOW_SIZE = 3
 
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
@@ -74,8 +73,6 @@ face_cascade = cv2.CascadeClassifier(
 FRAME_WINDOW = col1.image([])
 status_box = col2.empty()
 confidence_box = col2.empty()
-
-closed_start = None
 cap = cv2.VideoCapture(0)
 
 # Key features of session summary
@@ -95,14 +92,14 @@ if 'last_sleep_time' not in STATE:
     STATE.last_sleep_time = 0
 if 'last_alarm_time' not in STATE:
     STATE.last_alarm_time = 0
+if 'closed_start' not in STATE:
+    STATE.closed_start = None   
 if 'camera_running' not in STATE:
     STATE.camera_running = False
 if 'session_stopped' not in STATE:
     if 'feedback_submitted' not in STATE:
         STATE.feedback_submitted = False
     STATE.session_stopped = False
-if 'pred_history' not in STATE:
-    STATE.pred_history = []
 
 # Start new session on new running instance
 if STATE.camera_running and STATE.duration is None:
@@ -115,7 +112,7 @@ if STATE.camera_running and STATE.duration is None:
     STATE.last_drowsy_time = 0
     STATE.last_sleep_time = 0
     STATE.last_alarm_time = 0
-    STATE.pred_history = []
+    STATE.closed_start = None
     
 while STATE.camera_running:
     ret, frame = cap.read()
@@ -144,16 +141,12 @@ while STATE.camera_running:
         img = np.expand_dims(img, axis=0)
 
         prediction = model.predict(img, verbose=0)[0][0]
-        STATE.pred_history.append(prediction)
-        if len(STATE.pred_history) > WINDOW_SIZE:
-            STATE.pred_history.pop(0)
-        smoothed_pred = sum(STATE.pred_history) / len(STATE.pred_history)
-        confidence = float(smoothed_pred)
+        confidence = float(prediction)
 
-        if smoothed_pred < threshold:
-            if closed_start is None:
-                closed_start = time.time()
-            elapsed = time.time() - closed_start
+        if prediction < threshold:
+            if STATE.closed_start is None:
+                STATE.closed_start = time.time()
+            elapsed = time.time() - STATE.closed_start
 
             if elapsed > 2:
                 label = "Sleeping"
@@ -168,10 +161,9 @@ while STATE.camera_running:
                 label = "Awake"
                 color = (0, 255, 0)
         else:
-            closed_start = None
+            STATE.closed_start = None
             label = "Awake"
             color = (0, 255, 0)
-            STATE.pred_history = []
         break
 
     # Draw label
