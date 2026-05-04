@@ -65,7 +65,7 @@ model = load_model()
 IMG_SIZE = (224, 224)
 DROWSY_COOLDOWN = 5
 SLEEP_COOLDOWN = 8
-WINDOW_SIZE = 10
+WINDOW_SIZE = 3
 
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
@@ -171,6 +171,7 @@ while STATE.camera_running:
             closed_start = None
             label = "Awake"
             color = (0, 255, 0)
+            STATE.pred_history = []
         break
 
     # Draw label
