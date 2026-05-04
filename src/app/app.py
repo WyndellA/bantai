@@ -54,7 +54,10 @@ if st.sidebar.button("Stop"):
     STATE.camera_running = False
     STATE.session_stopped = True
 
-threshold = st.sidebar.slider("Closed Threshold", 0.1, 0.6, 0.25)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Detection Preferences")
+threshold = st.sidebar.slider("Eye Closed Threshold", 0.1, 0.6, 0.25)
+alarm_interval = st.sidebar.slider("Alarm Repeat Interval (seconds)", 1.0, 10.0, 3.0, 0.5)
 
 # Load model
 @st.cache_resource
@@ -151,7 +154,7 @@ while STATE.camera_running:
             if elapsed > 2:
                 label = "Sleeping"
                 color = (0, 0, 255)
-                if time.time() - STATE.last_alarm_time > 3:
+                if time.time() - STATE.last_alarm_time > alarm_interval:
                     os.system("afplay sound/fah_edited.mp3 &")
                     STATE.last_alarm_time = time.time()
             elif elapsed > 1:
