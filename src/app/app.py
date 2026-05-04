@@ -196,7 +196,7 @@ while STATE.camera_running:
         current_time = time.time()
 
         # New sleep episode
-        if val == 0.0:
+        if val == 0.0 and STATE.closed_start is not None:
             if current_time - STATE.last_sleep_time > SLEEP_COOLDOWN:
                 STATE.sleep_episodes += 1
                 STATE.last_sleep_time = current_time
@@ -221,8 +221,7 @@ if STATE.session_stopped and STATE.duration is not None:
     mins, secs = divmod(int(time.time() - STATE.duration), 60)
     
     # Set up data columns
-    score = max(0, 100 - (STATE.drowsy_episodes * 10 +
-            STATE.sleep_episodes * 20))
+    score = max(0, 100 - (STATE.drowsy_episodes * 5 + STATE.sleep_episodes * 10))
     a, b, c, d, e = st.columns(5)
     a.metric("Start Time", STATE.start_time)
     b.metric("Total Session Duration", f'{mins}m {secs}s')
