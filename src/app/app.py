@@ -8,6 +8,8 @@ import time
 import os
 from datetime import datetime
 
+
+# FEEDBACK HELPER FUNCTION
 def save_feedback(
     start_time,
     duration,
@@ -36,50 +38,66 @@ def save_feedback(
 
     df_all.to_csv(file_path, index=False)
 
+
+# PAGE PREREQUISITES
 st.set_page_config(page_title="BANTAI", layout="wide")
 st.title("BANTAI - Drowsiness Detection")
 st.markdown("Real-time eye monitoring system using Deep Learning")
+col1, col2 = st.columns([2, 1])
+
+
+# CURRENT STREAMLIT RUN INSTANCE
 STATE = st.session_state
+
+
+# PAUSED SESSION MESSAGE
 pause_box = st.empty()
 if STATE.get("camera_paused", False):
     pause_box.warning("Session is currently paused. Click **'Resume Session'** to continue.")
 else:
     pause_box.empty()
-col1, col2 = st.columns([2, 1])
 
-# Key features of session summary
+
+# SESSION SUMMARY FEATURES
+if 'start_time' not in STATE:
+    STATE.start_time = None               # Local start time
 if 'duration' not in STATE:
     STATE.duration = None                 # Session start time
 if 'session_length' not in STATE:
-    STATE.session_length = 0              # Session total time
+    STATE.session_length = 0.0            # Session total time
 if 'drowsy_episodes' not in STATE:
     STATE.drowsy_episodes = 0             # Number of 'drowsy' episodes
 if 'sleep_episodes' not in STATE:
     STATE.sleep_episodes = 0              # Number of 'sleeping' episodes
 if 'alertness_timeline' not in STATE:
     STATE.alertness_timeline = []         # List of episodes
-if 'start_time' not in STATE:
-    STATE.start_time = None               # Local start time
+
+
+# TIME INTERVAL HELPERS
+if 'closed_start' not in STATE:
+    STATE.closed_start = None   
 if 'last_drowsy_time' not in STATE:
     STATE.last_drowsy_time = 0
 if 'last_sleep_time' not in STATE:
     STATE.last_sleep_time = 0
 if 'last_alarm_time' not in STATE:
     STATE.last_alarm_time = 0
-if 'closed_start' not in STATE:
-    STATE.closed_start = None   
+
+
+# START/PAUSE/RESUME/STOP HELPERS
+if 'running_time' not in STATE:
+    STATE.running_time = 0.0               # Unpaused total session time
+if 'camera_paused' not in STATE:
+    STATE.camera_paused = False
 if 'camera_running' not in STATE:
     STATE.camera_running = False
 if 'session_stopped' not in STATE:
     if 'feedback_submitted' not in STATE:
         STATE.feedback_submitted = False
     STATE.session_stopped = False
-if 'running_time' not in STATE:
-    STATE.running_time = 0.0               # Unpaused total session time
-if 'camera_paused' not in STATE:
-    STATE.camera_paused = False
 
-# Button label helper
+
+# BUTTON LABEL HELPERS
 if STATE.camera_running:
     button_label = "Pause Session"
 elif STATE.camera_paused:
@@ -87,15 +105,15 @@ elif STATE.camera_paused:
 else:
     button_label = "Start Session"
 
-# Sidebar controls
+
+# SIDEBAR CONTROLS
 st.sidebar.title("Controls")
+
 if st.sidebar.button(button_label):
     if button_label == "Start Session":
         STATE.camera_running = True
-        STATE.session_stopped = False
         STATE.camera_paused = False
-
-        # Reset session state
+        STATE.session_stopped = False
         STATE.duration = None
 
     elif button_label == "Pause Session":
@@ -110,7 +128,7 @@ if st.sidebar.button(button_label):
 
     st.rerun()
 
-if st.sidebar.button("Stop"):
+elif st.sidebar.button("Stop"):
     # Freeze final session length
     if STATE.camera_running and STATE.duration is not None:
         STATE.session_length = STATE.running_time + time.time() - STATE.duration
@@ -123,12 +141,15 @@ if st.sidebar.button("Stop"):
     
     st.rerun()
 
+
+# USER-CONFIGURABLE PREFERENCES
 st.sidebar.markdown("---")
 st.sidebar.subheader("Detection Preferences")
 threshold = st.sidebar.slider("Eye Closed Threshold", 0.1, 0.6, 0.25)
 alarm_interval = st.sidebar.slider("Alarm Repeat Interval (seconds)", 2.0, 10.0, 3.0, 0.5)
 
-# Load model
+
+# LOAD MODEL
 @st.cache_resource
 def load_model():
     return tf.keras.models.load_model("models/model.h5", compile=False)
@@ -138,6 +159,8 @@ IMG_SIZE = (224, 224)
 DROWSY_COOLDOWN = 5
 SLEEP_COOLDOWN = 8
 
+
+# LOAD CAMERA
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
@@ -147,22 +170,28 @@ status_box = col2.empty()
 confidence_box = col2.empty()
 cap = cv2.VideoCapture(0)
 
-# Start new session on new running instance
+
+# NEW SESSION REINITIALIZATION
 if STATE.camera_running and STATE.duration is None:
+    STATE.start_time = datetime.now().strftime("%I:%M %p")
     STATE.duration = time.time()
     STATE.session_length = 0
     STATE.drowsy_episodes = 0
     STATE.sleep_episodes = 0
     STATE.alertness_timeline = []
-    STATE.start_time = datetime.now().strftime("%I:%M %p")
+
+    STATE.closed_start = None
     STATE.last_drowsy_time = 0
     STATE.last_sleep_time = 0
     STATE.last_alarm_time = 0
-    STATE.closed_start = None
-    STATE.feedback_submitted = False
+
     STATE.running_time = 0.0
     STATE.camera_paused = False
-    
+    STATE.session_stopped = False
+    STATE.feedback_submitted = False
+
+
+# MAIN DROWSINESS DETECTION LOOP
 while STATE.camera_running:
     ret, frame = cap.read()
     if not ret:
@@ -192,6 +221,7 @@ while STATE.camera_running:
         prediction = model.predict(img, verbose=0)[0][0]
         confidence = float(prediction)
 
+        # Identify user state
         if prediction < threshold:
             if STATE.closed_start is None:
                 STATE.closed_start = time.time()
@@ -200,6 +230,7 @@ while STATE.camera_running:
             if elapsed > 2:
                 label = "Sleeping"
                 color = (0, 0, 255)
+
                 if time.time() - STATE.last_alarm_time > alarm_interval:
                     os.system("afplay sound/fah_edited.mp3 &")
                     STATE.last_alarm_time = time.time()
@@ -235,6 +266,7 @@ while STATE.camera_running:
 
     confidence_box.metric("Model Confidence", f"{confidence:.2f}")
 
+    # Store detected states in alertness_timeline
     if STATE.duration is not None:
         # Get second when frame was processed
         curr = STATE.running_time + time.time() - STATE.duration
@@ -265,7 +297,8 @@ while STATE.camera_running:
 
 cap.release()
 
-# Session summary upon 'Stop'
+
+# SESSION SUMMARY (AFTER 'STOP')
 if STATE.session_stopped and STATE.duration is not None:
     st.markdown("---")
     st.header("Session Summary")
@@ -298,15 +331,18 @@ if STATE.session_stopped and STATE.duration is not None:
         ).configure_axisX(grid=False).configure_view(strokeOpacity=0)
         st.altair_chart(chart, use_container_width=True)
 
-        # Personalized recommendations
+
+        # PERSONALIZED RECOMMENDATIONS
         negative_episodes = df[df["Alertness Level"] < 1.0]     # Isolate drowsy/sleeping episodes
 
         # Scenario 1: Short session
         if STATE.session_length < 30:
             st.info("Session too short for meaningful behavioral recommendations.")
+
         # Scenario 2: Fully awake
         elif STATE.sleep_episodes + STATE.drowsy_episodes == 0:
             st.success(f"#### 💡 Personal Recommendations\n You managed to stay fully awake throughout the session! Continue your study habits, and don't forget to get some rest after a job well done.")
+        
         elif not negative_episodes.empty:
             # Get first instance of drowsy/sleeping
             episode_incidence_min, episode_incidence_sec = divmod(int(negative_episodes.index[0]), 60)
@@ -352,6 +388,8 @@ if STATE.session_stopped and STATE.duration is not None:
                     f"{recommended_break} minutes may help maintain focus and reduce fatigue."
                 )
 
+
+        # SESSION FEEDBACK
         st.markdown("---")
         st.subheader("Session Feedback")
         st.write("How accurate was BANTAI during this session?")
