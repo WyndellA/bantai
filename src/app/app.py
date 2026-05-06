@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import tensorflow as tf
 import pandas as pd
+import altair as alt
 import cv2
 import time
 import os
@@ -251,7 +252,11 @@ while STATE.camera_running:
                 STATE.last_drowsy_time = current_time
 
         # Set time as the x-value and alertness level as the y-value
-        STATE.alertness_timeline.append({"Time (seconds)": curr, "Alertness Level": val})
+        STATE.alertness_timeline.append({
+            "Clock Time": datetime.now().strftime("%I:%M:%S %p"),
+            "Time (seconds)": curr, 
+            "Alertness Level": val
+        })
 
 cap.release()
 
@@ -277,8 +282,16 @@ if STATE.session_stopped and STATE.duration is not None:
                     "0.0: Sleeping | 0.5: Drowsy | 1.0: Awake</div>", 
                     unsafe_allow_html=True)
         df = pd.DataFrame(STATE.alertness_timeline)
-        df.set_index("Time (seconds)", inplace=True)
-        st.area_chart(df, x_label="Time (seconds)", y_label="Alertness Level")
+        chart = alt.Chart(df).mark_area(color='#99ccff').encode(
+            x=alt.X("Time (seconds):Q"),
+            y=alt.Y("Alertness Level:Q"),
+            tooltip=[
+                alt.Tooltip("Clock Time:N"),
+                alt.Tooltip("Time (seconds):Q", format=".1f"), 
+                alt.Tooltip("Alertness Level:Q") 
+            ]
+        ).configure_axisX(grid=False).configure_view(strokeOpacity=0)
+        st.altair_chart(chart, use_container_width=True)
 
         # Personalized recommendations
         negative_episodes = df[df["Alertness Level"] < 1.0]     # Isolate drowsy/sleeping episodes
