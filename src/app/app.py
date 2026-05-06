@@ -40,8 +40,11 @@ st.set_page_config(page_title="BANTAI", layout="wide")
 st.title("BANTAI - Drowsiness Detection")
 st.markdown("Real-time eye monitoring system using Deep Learning")
 STATE = st.session_state
+pause_box = st.empty()
 if STATE.get("camera_paused", False):
-    st.warning("Session is currently paused. Click 'Resume Session' to continue.")
+    pause_box.warning("Session is currently paused. Click **'Resume Session'** to continue.")
+else:
+    pause_box.empty()
 col1, col2 = st.columns([2, 1])
 
 # Key features of session summary
