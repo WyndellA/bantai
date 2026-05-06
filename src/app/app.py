@@ -41,47 +41,6 @@ st.markdown("Real-time eye monitoring system using Deep Learning")
 STATE = st.session_state
 col1, col2 = st.columns([2, 1])
 
-# Sidebar controls
-st.sidebar.title("Controls")
-if st.sidebar.button("Start Camera"):
-    STATE.camera_running = True
-    STATE.session_stopped = False
-
-    # Reset session state
-    STATE.duration = None
-
-if st.sidebar.button("Stop"):
-    STATE.camera_running = False
-    STATE.session_stopped = True
-
-    # Freeze final session length
-    if STATE.duration is not None:
-        STATE.session_length = time.time() - STATE.duration
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Detection Preferences")
-threshold = st.sidebar.slider("Eye Closed Threshold", 0.1, 0.6, 0.25)
-alarm_interval = st.sidebar.slider("Alarm Repeat Interval (seconds)", 2.0, 10.0, 3.0, 0.5)
-
-# Load model
-@st.cache_resource
-def load_model():
-    return tf.keras.models.load_model("models/model.h5", compile=False)
-
-model = load_model()
-IMG_SIZE = (224, 224)
-DROWSY_COOLDOWN = 5
-SLEEP_COOLDOWN = 8
-
-face_cascade = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-)
-
-FRAME_WINDOW = col1.image([])
-status_box = col2.empty()
-confidence_box = col2.empty()
-cap = cv2.VideoCapture(0)
-
 # Key features of session summary
 if 'duration' not in STATE:
     STATE.duration = None                 # Session start time
@@ -109,6 +68,78 @@ if 'session_stopped' not in STATE:
     if 'feedback_submitted' not in STATE:
         STATE.feedback_submitted = False
     STATE.session_stopped = False
+if 'running_time' not in STATE:
+    STATE.running_time = 0.0               # Unpaused total session time
+if 'camera_paused' not in STATE:
+    STATE.camera_paused = False
+
+# Button label helper
+if STATE.camera_running:
+    button_label = "Pause Session"
+elif STATE.camera_paused:
+    button_label = "Resume Session"
+else:
+    button_label = "Start Session"
+
+# Sidebar controls
+st.sidebar.title("Controls")
+if st.sidebar.button(button_label):
+    if button_label == "Start Session":
+        STATE.camera_running = True
+        STATE.session_stopped = False
+        STATE.camera_paused = False
+
+        # Reset session state
+        STATE.duration = None
+
+    elif button_label == "Pause Session":
+        STATE.camera_running = False
+        STATE.camera_paused = True
+        STATE.running_time += time.time() - STATE.duration
+
+    elif button_label == "Resume Session":
+        STATE.camera_running = True
+        STATE.camera_paused = False
+        STATE.duration = time.time()
+
+    st.rerun()
+
+if st.sidebar.button("Stop"):
+    # Freeze final session length
+    if STATE.camera_running and STATE.duration is not None:
+        STATE.session_length = STATE.running_time + time.time() - STATE.duration
+    elif STATE.camera_paused:
+        STATE.session_length = STATE.running_time
+        
+    STATE.camera_running = False
+    STATE.camera_paused = False
+    STATE.session_stopped = True
+    
+    st.rerun()
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Detection Preferences")
+threshold = st.sidebar.slider("Eye Closed Threshold", 0.1, 0.6, 0.25)
+alarm_interval = st.sidebar.slider("Alarm Repeat Interval (seconds)", 2.0, 10.0, 3.0, 0.5)
+
+# Load model
+@st.cache_resource
+def load_model():
+    return tf.keras.models.load_model("models/model.h5", compile=False)
+
+model = load_model()
+IMG_SIZE = (224, 224)
+DROWSY_COOLDOWN = 5
+SLEEP_COOLDOWN = 8
+
+face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+)
+
+FRAME_WINDOW = col1.image([])
+status_box = col2.empty()
+confidence_box = col2.empty()
+cap = cv2.VideoCapture(0)
 
 # Start new session on new running instance
 if STATE.camera_running and STATE.duration is None:
@@ -123,6 +154,8 @@ if STATE.camera_running and STATE.duration is None:
     STATE.last_alarm_time = 0
     STATE.closed_start = None
     STATE.feedback_submitted = False
+    STATE.running_time = 0.0
+    STATE.camera_paused = False
     
 while STATE.camera_running:
     ret, frame = cap.read()
@@ -198,7 +231,7 @@ while STATE.camera_running:
 
     if STATE.duration is not None:
         # Get second when frame was processed
-        curr = time.time() - STATE.duration
+        curr = STATE.running_time + time.time() - STATE.duration
         # Scale categories numerically from 0 to 1
         if "No Face" in label: val = np.nan
         else: val = 0.0 if "Sleeping" in label else (0.5 if "Drowsy" in label else 1.0)
