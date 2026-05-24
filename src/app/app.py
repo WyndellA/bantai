@@ -71,6 +71,8 @@ if 'sleep_episodes' not in STATE:
     STATE.sleep_episodes = 0              # Number of 'sleeping' episodes
 if 'alertness_timeline' not in STATE:
     STATE.alertness_timeline = []         # List of episodes
+if 'prediction_history' not in STATE:
+    STATE.prediction_history = []
 
 
 # TIME INTERVAL HELPERS
@@ -145,7 +147,7 @@ elif st.sidebar.button("Stop"):
 # USER-CONFIGURABLE PREFERENCES
 st.sidebar.markdown("---")
 st.sidebar.subheader("Detection Preferences")
-threshold = st.sidebar.slider("Eye Closed Threshold", 0.1, 0.6, 0.25)
+threshold = st.sidebar.slider("Eye Closed Threshold", 0.1, 1.0, 0.25)
 alarm_interval = st.sidebar.slider("Alarm Repeat Interval (seconds)", 2.0, 10.0, 3.0, 0.5)
 
 
@@ -209,17 +211,42 @@ while STATE.camera_running:
         cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
         face = frame[y:y+h, x:x+w]
-        eye_region = face[int(h*0.2):int(h*0.5), int(w*0.2):int(w*0.8)]
+        eye_region = face[
+            int(h*0.25):int(h*0.60),
+            int(w*0.50):int(w*0.90)
+        ]
 
         eye_gray = cv2.cvtColor(eye_region, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(        
+        clipLimit=2.0,
+        tileGridSize=(8,8)
+    )
+        eye_gray = clahe.apply(eye_gray)
+        eye_gray = cv2.GaussianBlur(eye_gray, (3,3), 0)
         eye_gray = cv2.cvtColor(eye_gray, cv2.COLOR_GRAY2BGR)
+    #     col2.image(
+    #     eye_region,
+    #     caption="Eye Region",
+    #     channels="BGR"
+    # )
 
+        # cv2.imshow("Eye Region", eye_region)
         img = cv2.resize(eye_gray, IMG_SIZE)
         img = img / 255.0
         img = np.expand_dims(img, axis=0)
+        # cv2.waitKey(1)
 
         prediction = model.predict(img, verbose=0)[0][0]
+
+        STATE.prediction_history.append(prediction)
+
+        # if len(STATE.prediction_history) > 10:
+        #     STATE.prediction_history.pop(0)
+
+        # prediction = np.mean(STATE.prediction_history)
+
         confidence = float(prediction)
+        print(prediction)
 
         # Identify user state
         if prediction < threshold:
@@ -227,7 +254,7 @@ while STATE.camera_running:
                 STATE.closed_start = time.time()
             elapsed = time.time() - STATE.closed_start
 
-            if elapsed > 2:
+            if elapsed > 3:
                 label = "Sleeping"
                 color = (0, 0, 255)
 
