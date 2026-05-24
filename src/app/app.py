@@ -170,6 +170,7 @@ face_cascade = cv2.CascadeClassifier(
 FRAME_WINDOW = col1.image([])
 status_box = col2.empty()
 confidence_box = col2.empty()
+speed_box = col2.empty()
 cap = cv2.VideoCapture(0)
 
 
@@ -206,6 +207,7 @@ while STATE.camera_running:
     label = "No Face"
     color = (0, 255, 255)
     confidence = 0
+    inference_time = 0
 
     for (x, y, w, h) in faces:
         face = frame[y:y+h, x:x+w]
@@ -235,8 +237,14 @@ while STATE.camera_running:
         # Add batch dimension
         img = np.expand_dims(img, axis=0)
 
+        start_inference = time.time()
+
         # Predict
         prediction = model.predict(img, verbose=0)[0][0]
+
+        end_inference = time.time()
+
+        inference_time = end_inference - start_inference    
 
         # Store history
         STATE.prediction_history.append(prediction)
@@ -303,6 +311,10 @@ while STATE.camera_running:
         status_box.info(label)
 
     confidence_box.metric("Model Confidence", f"{confidence:.2f}")
+    speed_box.metric(
+        "Inference Time",
+        f"{inference_time*1000:.2f} ms"
+    )
 
     # Store detected states in alertness_timeline
     if STATE.duration is not None:
