@@ -208,37 +208,48 @@ while STATE.camera_running:
     confidence = 0
 
     for (x, y, w, h) in faces:
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
-
         face = frame[y:y+h, x:x+w]
+
+        # crop both eyes
         eye_region = face[
-            int(h*0.25):int(h*0.60),
-            int(w*0.50):int(w*0.90)
+            int(h * 0.18):int(h * 0.50),
+            int(w * 0.15):int(w * 0.85)
         ]
 
-        eye_gray = cv2.cvtColor(eye_region, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(        
-        clipLimit=2.0,
-        tileGridSize=(8,8)
-    )
-        eye_gray = clahe.apply(eye_gray)
-        eye_gray = cv2.GaussianBlur(eye_gray, (3,3), 0)
-        eye_gray = cv2.cvtColor(eye_gray, cv2.COLOR_GRAY2BGR)
-    #     col2.image(
-    #     eye_region,
-    #     caption="Eye Region",
-    #     channels="BGR"
-    # )
+        # Skip empty frames
+        if eye_region.size == 0:
+            continue
 
-        # cv2.imshow("Eye Region", eye_region)
-        img = cv2.resize(eye_gray, IMG_SIZE)
-        img = img / 255.0
+        # Keep RGB (better for glasses)
+        eye_rgb = cv2.cvtColor(eye_region, cv2.COLOR_BGR2RGB)
+
+        # Light blur to reduce glasses glare/noise
+        eye_rgb = cv2.GaussianBlur(eye_rgb, (3, 3), 0)
+
+        # Resize
+        img = cv2.resize(eye_rgb, IMG_SIZE)
+
+        # Normalize
+        img = img.astype("float32") / 255.0
+
+        # Add batch dimension
         img = np.expand_dims(img, axis=0)
-        # cv2.waitKey(1)
 
+        # Predict
         prediction = model.predict(img, verbose=0)[0][0]
 
+        # Store history
         STATE.prediction_history.append(prediction)
+
+        # Only keep last 10 predictions
+        if len(STATE.prediction_history) > 10:
+            STATE.prediction_history.pop(0)
+
+        # smooth predictions (average yung recent predictions)
+        prediction = np.mean(STATE.prediction_history)
+
+        confidence = float(prediction)
+
 
         # if len(STATE.prediction_history) > 10:
         #     STATE.prediction_history.pop(0)
